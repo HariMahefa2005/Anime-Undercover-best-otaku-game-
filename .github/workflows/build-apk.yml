@@ -1,1 +1,47 @@
+name: Build Android APK
 
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Préparer le projet (zip le plus récent, sinon racine du dépôt)
+        run: |
+          set -e
+          ZIP=$(ls -1 *.zip 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$ZIP" ]; then
+            echo "Archive utilisée : $ZIP"
+            rm -rf "$RUNNER_TEMP/proj" && mkdir -p "$RUNNER_TEMP/proj"
+            unzip -q -o "$ZIP" -d "$RUNNER_TEMP/proj"
+            S=$(find "$RUNNER_TEMP/proj" -name settings.gradle -not -path "*/__MACOSX/*" | head -n 1)
+            [ -n "$S" ] || { echo "settings.gradle introuvable dans $ZIP"; exit 1; }
+            echo "PROJECT_DIR=$(dirname "$S")" >> "$GITHUB_ENV"
+          else
+            [ -f settings.gradle ] || { echo "Aucun zip et pas de settings.gradle à la racine"; exit 1; }
+            echo "PROJECT_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Compiler l'APK debug
+        run: |
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AnimeUndercover-v7.0-APK
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
